@@ -194,10 +194,11 @@ async function enterBoard(boardData, password) {
     
     // Increment user count
     try {
+        const newCount = Number(boardData.user_count || 0) + 1;
         await pb.collection('boards').update(boardData.id, {
-            user_count: (boardData.user_count || 0) + 1
+            user_count: newCount
         });
-        updateUserCount((boardData.user_count || 0) + 1);
+        updateUserCount(newCount);
     } catch (e) {
         console.error('Failed to update user count:', e);
     }
@@ -215,7 +216,7 @@ async function leaveBoard() {
         try {
             const board = await pb.collection('boards').getOne(currentBoard.id);
             await pb.collection('boards').update(currentBoard.id, {
-                user_count: Math.max(0, (board.user_count || 1) - 1)
+                user_count: Math.max(0, Number(board.user_count || 1) - 1)
             });
         } catch (e) {
             console.error('Failed to update user count:', e);
@@ -658,7 +659,7 @@ function subscribeToUpdates() {
 }
 
 function updateUserCount(count) {
-    document.getElementById('userCount').textContent = `👥 ${count || 1}`;
+    document.getElementById('userCount').textContent = `👥 ${Number(count) || 1}`;
 }
 
 // Share
