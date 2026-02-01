@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StacksBoard - Collaborative Sticky Notes</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/pocketbase@0.21.1/dist/pocketbase.umd.min.js"></script>
+</head>
+<body>
+    <!-- Landing Page -->
+    <div id="landing" class="container">
+        <div class="hero">
+            <h1>📌 StacksBoard</h1>
+            <p class="tagline">Collaborative sticky notes for teams</p>
+            <p class="powered">Powered by <a href="https://stackshosting.cloud" target="_blank">STACKS</a> - $2/month infrastructure</p>
+            
+            <div class="actions">
+                <button id="createBoard" class="btn btn-primary">Create New Board</button>
+                <div class="divider">or</div>
+                <div class="join-form">
+                    <input type="text" id="boardCode" placeholder="Enter board code">
+                    <input type="password" id="boardPassword" placeholder="Password (if required)">
+                    <button id="joinBoard" class="btn btn-secondary">Join Board</button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="features">
+            <div class="feature">
+                <span class="icon">⚡</span>
+                <h3>Real-time Sync</h3>
+                <p>See changes instantly</p>
+            </div>
+            <div class="feature">
+                <span class="icon">👥</span>
+                <h3>Up to 10 Users</h3>
+                <p>Collaborate together</p>
+            </div>
+            <div class="feature">
+                <span class="icon">🔒</span>
+                <h3>Password Protected</h3>
+                <p>Keep it private</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Board Modal -->
+    <div id="createModal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Create New Board</h2>
+            <div class="form-group">
+                <label for="newBoardName">Board Name</label>
+                <input type="text" id="newBoardName" placeholder="My Awesome Board">
+            </div>
+            <div class="form-group">
+                <label for="newBoardPassword">Password (optional)</label>
+                <input type="password" id="newBoardPassword" placeholder="Leave empty for public">
+            </div>
+            <div class="modal-actions">
+                <button id="cancelCreate" class="btn btn-secondary">Cancel</button>
+                <button id="confirmCreate" class="btn btn-primary">Create Board</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Board View -->
+    <div id="board" class="hidden">
+        <div class="board-header">
+            <div class="board-info">
+                <h2 id="boardName">Board Name</h2>
+                <span id="boardCodeDisplay" class="board-code"></span>
+                <span id="userCount" class="user-count">👥 1</span>
+            </div>
+            <div class="board-actions">
+                <button id="addNote" class="btn btn-primary">+ Add Note</button>
+                <button id="shareBoard" class="btn btn-secondary">Share</button>
+                <button id="leaveBoard" class="btn btn-danger">Leave</button>
+            </div>
+        </div>
+        <div id="canvas" class="canvas">
+            <!-- Notes will be rendered here -->
+        </div>
+    </div>
+
+    <!-- Share Modal -->
+    <div id="shareModal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Share This Board</h2>
+            <div class="share-info">
+                <p>Share this link with your team:</p>
+                <div class="share-link">
+                    <input type="text" id="shareLink" readonly>
+                    <button id="copyLink" class="btn btn-primary">Copy</button>
+                </div>
+                <p id="sharePasswordNote" class="password-note hidden">🔒 Password required to join</p>
+            </div>
+            <div class="modal-actions">
+                <button id="closeShare" class="btn btn-secondary">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>
