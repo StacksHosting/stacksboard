@@ -139,7 +139,7 @@ async function createBoard() {
         const board = await pb.collection('boards').create({
             name: name,
             password: password || null,
-            user_count: 1
+            user_count: 0
         });
         
         createModal.classList.add('hidden');
@@ -168,7 +168,8 @@ async function joinBoard() {
             return;
         }
         
-        if (board.user_count >= 10) {
+        // Check user limit (10 max)
+        if ((board.user_count || 0) >= 10) {
             showToast('Board is full (max 10 users)');
             return;
         }
