@@ -5,43 +5,69 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>StacksBoard - Collaborative Sticky Notes</title>
     <link rel="stylesheet" href="style.css">
-    <script src="https://cdn.jsdelivr.net/npm/pocketbase@0.21.1/dist/pocketbase.umd.min.js"></script>
+    <script src="https://unpkg.com/pocketbase@0.21.1/dist/pocketbase.umd.js"></script>
 </head>
 <body>
     <!-- Landing Page -->
-    <div id="landing" class="container">
-        <div class="hero">
-            <h1>📌 StacksBoard</h1>
+    <div id="landing" class="landing">
+        <div class="landing-content">
+            <div class="logo">
+                <span class="logo-icon">📌</span>
+                <h1>StacksBoard</h1>
+            </div>
             <p class="tagline">Collaborative sticky notes for teams</p>
-            <p class="powered">Powered by <a href="https://stackshosting.cloud" target="_blank">STACKS</a> - $2/month infrastructure</p>
+            <p class="powered-by">Powered by <a href="https://stackshosting.cloud" target="_blank">STACKS</a> - $2/month infrastructure</p>
             
-            <div class="actions">
-                <button id="createBoard" class="btn btn-primary">Create New Board</button>
-                <div class="divider">or</div>
+            <div class="landing-actions">
+                <button id="createBoard" class="btn btn-primary btn-large">Create New Board</button>
+                
+                <div class="divider"><span>or</span></div>
+                
                 <div class="join-form">
-                    <input type="text" id="boardCode" placeholder="Enter board code">
-                    <input type="password" id="boardPassword" placeholder="Password (if required)">
-                    <button id="joinBoard" class="btn btn-secondary">Join Board</button>
+                    <input type="text" id="boardCode" placeholder="Enter board code" class="input-large">
+                    <input type="password" id="boardPassword" placeholder="Password (if required)" class="input-large">
+                    <button id="joinBoard" class="btn btn-secondary btn-large">Join Board</button>
+                </div>
+            </div>
+            
+            <div class="features">
+                <div class="feature">
+                    <span class="feature-icon">⚡</span>
+                    <h3>Real-time Sync</h3>
+                    <p>See changes instantly</p>
+                </div>
+                <div class="feature">
+                    <span class="feature-icon">👥</span>
+                    <h3>Up to 10 Users</h3>
+                    <p>Collaborate together</p>
+                </div>
+                <div class="feature">
+                    <span class="feature-icon">🔒</span>
+                    <h3>Password Protected</h3>
+                    <p>Keep it private</p>
                 </div>
             </div>
         </div>
+    </div>
+
+    <!-- Board View -->
+    <div id="board" class="board hidden">
+        <header class="board-header">
+            <div class="board-info">
+                <h2 id="boardName">Board Name</h2>
+                <span class="board-code" id="boardCodeDisplay">Code: abc123</span>
+                <span class="user-count" id="userCount">👥 1</span>
+            </div>
+            <div class="board-actions">
+                <button id="addZone" class="btn btn-secondary">+ Section</button>
+                <button id="addNote" class="btn btn-primary">+ Add Note</button>
+                <button id="shareBoard" class="btn btn-secondary">Share</button>
+                <button id="leaveBoard" class="btn btn-danger">Leave</button>
+            </div>
+        </header>
         
-        <div class="features">
-            <div class="feature">
-                <span class="icon">⚡</span>
-                <h3>Real-time Sync</h3>
-                <p>See changes instantly</p>
-            </div>
-            <div class="feature">
-                <span class="icon">👥</span>
-                <h3>Up to 10 Users</h3>
-                <p>Collaborate together</p>
-            </div>
-            <div class="feature">
-                <span class="icon">🔒</span>
-                <h3>Password Protected</h3>
-                <p>Keep it private</p>
-            </div>
+        <div id="canvas" class="canvas">
+            <!-- Notes and zones render here -->
         </div>
     </div>
 
@@ -55,31 +81,12 @@
             </div>
             <div class="form-group">
                 <label for="newBoardPassword">Password (optional)</label>
-                <input type="password" id="newBoardPassword" placeholder="Leave empty for public">
+                <input type="password" id="newBoardPassword" placeholder="Leave empty for public board">
             </div>
             <div class="modal-actions">
                 <button id="cancelCreate" class="btn btn-secondary">Cancel</button>
                 <button id="confirmCreate" class="btn btn-primary">Create Board</button>
             </div>
-        </div>
-    </div>
-
-    <!-- Board View -->
-    <div id="board" class="hidden">
-        <div class="board-header">
-            <div class="board-info">
-                <h2 id="boardName">Board Name</h2>
-                <span id="boardCodeDisplay" class="board-code"></span>
-                <span id="userCount" class="user-count">👥 1</span>
-            </div>
-            <div class="board-actions">
-                <button id="addNote" class="btn btn-primary">+ Add Note</button>
-                <button id="shareBoard" class="btn btn-secondary">Share</button>
-                <button id="leaveBoard" class="btn btn-danger">Leave</button>
-            </div>
-        </div>
-        <div id="canvas" class="canvas">
-            <!-- Notes will be rendered here -->
         </div>
     </div>
 
@@ -101,7 +108,55 @@
         </div>
     </div>
 
-    <!-- Toast Notifications -->
+    <!-- Add Note Modal -->
+    <div id="addNoteModal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Add New Note</h2>
+            <div class="form-group">
+                <label>Pick a color:</label>
+                <div class="color-picker-large">
+                    <div class="color-option note-yellow selected" data-color="yellow"></div>
+                    <div class="color-option note-pink" data-color="pink"></div>
+                    <div class="color-option note-blue" data-color="blue"></div>
+                    <div class="color-option note-green" data-color="green"></div>
+                    <div class="color-option note-purple" data-color="purple"></div>
+                    <div class="color-option note-orange" data-color="orange"></div>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button id="cancelAddNote" class="btn btn-secondary">Cancel</button>
+                <button id="confirmAddNote" class="btn btn-primary">Add Note</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Zone Modal -->
+    <div id="addZoneModal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Add Section</h2>
+            <div class="form-group">
+                <label for="zoneLabel">Section Label</label>
+                <input type="text" id="zoneLabel" placeholder="e.g., Ideas, To-Do, Done">
+            </div>
+            <div class="form-group">
+                <label>Pick a color:</label>
+                <div class="color-picker-large zone-colors">
+                    <div class="color-option zone-gray selected" data-color="gray"></div>
+                    <div class="color-option zone-blue" data-color="blue"></div>
+                    <div class="color-option zone-green" data-color="green"></div>
+                    <div class="color-option zone-purple" data-color="purple"></div>
+                    <div class="color-option zone-orange" data-color="orange"></div>
+                    <div class="color-option zone-red" data-color="red"></div>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button id="cancelAddZone" class="btn btn-secondary">Cancel</button>
+                <button id="confirmAddZone" class="btn btn-primary">Add Section</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
     <div id="toast" class="toast hidden"></div>
 
     <script src="app.js"></script>

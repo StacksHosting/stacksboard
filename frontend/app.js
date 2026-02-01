@@ -2,17 +2,21 @@
 // Powered by STACKS ($2/month infrastructure)
 
 // API is proxied through Nginx - use relative URL
-const API_URL = '';
 const pb = new PocketBase(window.location.origin);
 
 // App State
 let currentBoard = null;
 let notes = [];
-let draggedNote = null;
+let zones = [];
+let draggedElement = null;
 let dragOffset = { x: 0, y: 0 };
+let isResizing = false;
+let selectedNoteColor = 'yellow';
+let selectedZoneColor = 'gray';
 
 // Colors
 const COLORS = ['yellow', 'pink', 'blue', 'green', 'purple', 'orange'];
+const ZONE_COLORS = ['gray', 'blue', 'green', 'purple', 'orange', 'red'];
 
 // DOM Elements
 const landing = document.getElementById('landing');
@@ -20,11 +24,12 @@ const board = document.getElementById('board');
 const canvas = document.getElementById('canvas');
 const createModal = document.getElementById('createModal');
 const shareModal = document.getElementById('shareModal');
+const addNoteModal = document.getElementById('addNoteModal');
+const addZoneModal = document.getElementById('addZoneModal');
 const toast = document.getElementById('toast');
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
-    // Check for board code in URL
     const urlParams = new URLSearchParams(window.location.search);
     const boardCode = urlParams.get('board');
     
@@ -53,9 +58,60 @@ function setupEventListeners() {
     document.getElementById('confirmCreate').addEventListener('click', createBoard);
     
     // Board actions
-    document.getElementById('addNote').addEventListener('click', addNote);
+    document.getElementById('addNote').addEventListener('click', () => {
+        selectedNoteColor = 'yellow';
+        document.querySelectorAll('#addNoteModal .color-option').forEach(o => {
+            o.classList.toggle('selected', o.dataset.color === 'yellow');
+        });
+        addNoteModal.classList.remove('hidden');
+    });
+    document.getElementById('addZone').addEventListener('click', () => {
+        selectedZoneColor = 'gray';
+        document.querySelectorAll('#addZoneModal .color-option').forEach(o => {
+            o.classList.toggle('selected', o.dataset.color === 'gray');
+        });
+        document.getElementById('zoneLabel').value = '';
+        addZoneModal.classList.remove('hidden');
+    });
     document.getElementById('shareBoard').addEventListener('click', showShareModal);
     document.getElementById('leaveBoard').addEventListener('click', leaveBoard);
+    
+    // Add Note modal
+    document.getElementById('cancelAddNote').addEventListener('click', () => {
+        addNoteModal.classList.add('hidden');
+    });
+    document.getElementById('confirmAddNote').addEventListener('click', () => {
+        addNote(selectedNoteColor);
+        addNoteModal.classList.add('hidden');
+    });
+    
+    // Note color picker in modal
+    document.querySelectorAll('#addNoteModal .color-option').forEach(opt => {
+        opt.addEventListener('click', () => {
+            document.querySelectorAll('#addNoteModal .color-option').forEach(o => o.classList.remove('selected'));
+            opt.classList.add('selected');
+            selectedNoteColor = opt.dataset.color;
+        });
+    });
+    
+    // Add Zone modal
+    document.getElementById('cancelAddZone').addEventListener('click', () => {
+        addZoneModal.classList.add('hidden');
+    });
+    document.getElementById('confirmAddZone').addEventListener('click', () => {
+        const label = document.getElementById('zoneLabel').value.trim() || 'Section';
+        addZone(selectedZoneColor, label);
+        addZoneModal.classList.add('hidden');
+    });
+    
+    // Zone color picker in modal
+    document.querySelectorAll('#addZoneModal .color-option').forEach(opt => {
+        opt.addEventListener('click', () => {
+            document.querySelectorAll('#addZoneModal .color-option').forEach(o => o.classList.remove('selected'));
+            opt.classList.add('selected');
+            selectedZoneColor = opt.dataset.color;
+        });
+    });
     
     // Share modal
     document.getElementById('copyLink').addEventListener('click', copyShareLink);
@@ -107,13 +163,11 @@ async function joinBoard() {
     try {
         const board = await pb.collection('boards').getOne(code);
         
-        // Check password if required
         if (board.password && board.password !== password) {
             showToast('Invalid password');
             return;
         }
         
-        // Check user limit
         if (board.user_count >= 10) {
             showToast('Board is full (max 10 users)');
             return;
@@ -129,12 +183,10 @@ async function joinBoard() {
 async function enterBoard(boardData, password) {
     currentBoard = boardData;
     
-    // Update URL
     window.history.pushState({}, '', `?board=${boardData.id}`);
     
-    // Update UI
     document.getElementById('boardName').textContent = boardData.name;
-    document.getElementById('boardCodeDisplay').textContent = `Code: ${boardData.id}`;
+    document.getElementById('boardCodeDisplay').textContent = boardData.id;
     
     landing.classList.add('hidden');
     board.classList.remove('hidden');
@@ -142,14 +194,15 @@ async function enterBoard(boardData, password) {
     // Increment user count
     try {
         await pb.collection('boards').update(boardData.id, {
-            user_count: boardData.user_count + 1
+            user_count: (boardData.user_count || 0) + 1
         });
-        updateUserCount(boardData.user_count + 1);
+        updateUserCount((boardData.user_count || 0) + 1);
     } catch (e) {
         console.error('Failed to update user count:', e);
     }
     
-    // Load existing notes
+    // Load existing data
+    await loadZones();
     await loadNotes();
     
     // Subscribe to realtime updates
@@ -158,29 +211,124 @@ async function enterBoard(boardData, password) {
 
 async function leaveBoard() {
     if (currentBoard) {
-        // Decrement user count
         try {
             const board = await pb.collection('boards').getOne(currentBoard.id);
             await pb.collection('boards').update(currentBoard.id, {
-                user_count: Math.max(0, board.user_count - 1)
+                user_count: Math.max(0, (board.user_count || 1) - 1)
             });
         } catch (e) {
             console.error('Failed to update user count:', e);
         }
         
-        // Unsubscribe from realtime
         pb.collection('notes').unsubscribe();
+        pb.collection('zones').unsubscribe();
         pb.collection('boards').unsubscribe();
     }
     
     currentBoard = null;
     notes = [];
+    zones = [];
     canvas.innerHTML = '';
     
     board.classList.add('hidden');
     landing.classList.remove('hidden');
     
     window.history.pushState({}, '', window.location.pathname);
+}
+
+// Zones Management
+async function loadZones() {
+    try {
+        const records = await pb.collection('zones').getList(1, 100, {
+            filter: `board_id = "${currentBoard.id}"`,
+            sort: 'created'
+        });
+        
+        zones = records.items;
+        renderZones();
+    } catch (error) {
+        console.error('Failed to load zones:', error);
+    }
+}
+
+function renderZones() {
+    document.querySelectorAll('.zone').forEach(z => z.remove());
+    zones.forEach(zone => renderZone(zone));
+}
+
+function renderZone(zone) {
+    const zoneEl = document.createElement('div');
+    zoneEl.className = `zone zone-${zone.color || 'gray'}`;
+    zoneEl.dataset.id = zone.id;
+    zoneEl.style.left = `${zone.x || 50}px`;
+    zoneEl.style.top = `${zone.y || 50}px`;
+    zoneEl.style.width = `${zone.width || 300}px`;
+    zoneEl.style.height = `${zone.height || 200}px`;
+    
+    zoneEl.innerHTML = `
+        <span class="zone-label">${zone.label || 'Section'}</span>
+        <button class="zone-delete" title="Delete section">🗑️</button>
+        <div class="zone-resize"></div>
+    `;
+    
+    zoneEl.querySelector('.zone-delete').addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteZone(zone.id);
+    });
+    
+    canvas.insertBefore(zoneEl, canvas.firstChild);
+}
+
+async function addZone(color, label) {
+    const canvasRect = canvas.getBoundingClientRect();
+    const x = Math.random() * (canvasRect.width - 350) + 25;
+    const y = Math.random() * (canvasRect.height - 250) + 25;
+    
+    try {
+        const zone = await pb.collection('zones').create({
+            board_id: currentBoard.id,
+            label: label,
+            color: color,
+            x: Math.round(x),
+            y: Math.round(y),
+            width: 300,
+            height: 200
+        });
+        
+        zones.push(zone);
+        renderZone(zone);
+    } catch (error) {
+        console.error('Failed to add zone:', error);
+        showToast('Failed to add section');
+    }
+}
+
+async function updateZonePosition(zoneId, x, y) {
+    try {
+        await pb.collection('zones').update(zoneId, { x: Math.round(x), y: Math.round(y) });
+    } catch (error) {
+        console.error('Failed to update zone position:', error);
+    }
+}
+
+async function updateZoneSize(zoneId, width, height) {
+    try {
+        await pb.collection('zones').update(zoneId, { width: Math.round(width), height: Math.round(height) });
+    } catch (error) {
+        console.error('Failed to update zone size:', error);
+    }
+}
+
+async function deleteZone(zoneId) {
+    try {
+        await pb.collection('zones').delete(zoneId);
+        zones = zones.filter(z => z.id !== zoneId);
+        const zoneEl = document.querySelector(`.zone[data-id="${zoneId}"]`);
+        if (zoneEl) zoneEl.remove();
+    } catch (error) {
+        console.error('Failed to delete zone:', error);
+        showToast('Failed to delete section');
+    }
 }
 
 // Notes Management
@@ -199,7 +347,7 @@ async function loadNotes() {
 }
 
 function renderNotes() {
-    canvas.innerHTML = '';
+    document.querySelectorAll('.note').forEach(n => n.remove());
     notes.forEach(note => renderNote(note));
 }
 
@@ -223,7 +371,6 @@ function renderNote(note) {
         </div>
     `;
     
-    // Event listeners
     const content = noteEl.querySelector('.note-content');
     content.addEventListener('blur', () => updateNoteText(note.id, content.textContent));
     content.addEventListener('mousedown', (e) => e.stopPropagation());
@@ -244,7 +391,7 @@ function renderNote(note) {
     canvas.appendChild(noteEl);
 }
 
-async function addNote() {
+async function addNote(color) {
     const canvasRect = canvas.getBoundingClientRect();
     const x = Math.random() * (canvasRect.width - 250) + 25;
     const y = Math.random() * (canvasRect.height - 200) + 25;
@@ -253,16 +400,14 @@ async function addNote() {
         const note = await pb.collection('notes').create({
             board_id: currentBoard.id,
             text: '',
-            color: COLORS[Math.floor(Math.random() * COLORS.length)],
+            color: color,
             x: Math.round(x),
             y: Math.round(y)
         });
         
-        // Local update (realtime will sync)
         notes.push(note);
         renderNote(note);
         
-        // Focus the new note
         const noteEl = document.querySelector(`[data-id="${note.id}"] .note-content`);
         if (noteEl) noteEl.focus();
     } catch (error) {
@@ -283,7 +428,6 @@ async function updateNoteColor(noteId, color) {
     try {
         await pb.collection('notes').update(noteId, { color });
         
-        // Update local
         const noteEl = document.querySelector(`[data-id="${noteId}"]`);
         if (noteEl) {
             COLORS.forEach(c => noteEl.classList.remove(`note-${c}`));
@@ -308,10 +452,8 @@ async function updateNotePosition(noteId, x, y) {
 async function deleteNote(noteId) {
     try {
         await pb.collection('notes').delete(noteId);
-        
-        // Remove locally
         notes = notes.filter(n => n.id !== noteId);
-        const noteEl = document.querySelector(`[data-id="${noteId}"]`);
+        const noteEl = document.querySelector(`.note[data-id="${noteId}"]`);
         if (noteEl) noteEl.remove();
     } catch (error) {
         console.error('Failed to delete note:', error);
@@ -321,56 +463,86 @@ async function deleteNote(noteId) {
 
 // Drag and Drop
 function handleCanvasMouseDown(e) {
-    const noteEl = e.target.closest('.note');
-    if (!noteEl || e.target.closest('.note-content') || e.target.closest('.color-dot') || e.target.closest('.note-delete')) {
+    if (e.target.classList.contains('zone-resize')) {
+        isResizing = true;
+        draggedElement = e.target.closest('.zone');
         return;
     }
     
-    startDrag(noteEl, e.clientX, e.clientY);
+    const noteEl = e.target.closest('.note');
+    if (noteEl && !e.target.closest('.note-content') && !e.target.closest('.color-dot') && !e.target.closest('.note-delete')) {
+        startDrag(noteEl, e.clientX, e.clientY);
+        return;
+    }
+    
+    const zoneEl = e.target.closest('.zone');
+    if (zoneEl && !e.target.closest('.zone-delete') && !e.target.closest('.zone-resize')) {
+        startDrag(zoneEl, e.clientX, e.clientY);
+        return;
+    }
 }
 
 function handleTouchStart(e) {
+    const touch = e.touches[0];
+    
     const noteEl = e.target.closest('.note');
-    if (!noteEl || e.target.closest('.note-content') || e.target.closest('.color-dot') || e.target.closest('.note-delete')) {
+    if (noteEl && !e.target.closest('.note-content') && !e.target.closest('.color-dot') && !e.target.closest('.note-delete')) {
+        e.preventDefault();
+        startDrag(noteEl, touch.clientX, touch.clientY);
         return;
     }
     
-    e.preventDefault();
-    const touch = e.touches[0];
-    startDrag(noteEl, touch.clientX, touch.clientY);
+    const zoneEl = e.target.closest('.zone');
+    if (zoneEl && !e.target.closest('.zone-delete') && !e.target.closest('.zone-resize')) {
+        e.preventDefault();
+        startDrag(zoneEl, touch.clientX, touch.clientY);
+        return;
+    }
 }
 
-function startDrag(noteEl, clientX, clientY) {
-    draggedNote = noteEl;
-    const rect = noteEl.getBoundingClientRect();
+function startDrag(element, clientX, clientY) {
+    draggedElement = element;
+    const rect = element.getBoundingClientRect();
     dragOffset.x = clientX - rect.left;
     dragOffset.y = clientY - rect.top;
-    noteEl.classList.add('dragging');
+    element.classList.add('dragging');
 }
 
 function handleMouseMove(e) {
-    if (!draggedNote) return;
-    moveDraggedNote(e.clientX, e.clientY);
+    if (isResizing && draggedElement) {
+        const zoneRect = draggedElement.getBoundingClientRect();
+        const newWidth = e.clientX - zoneRect.left;
+        const newHeight = e.clientY - zoneRect.top;
+        
+        draggedElement.style.width = `${Math.max(150, newWidth)}px`;
+        draggedElement.style.height = `${Math.max(100, newHeight)}px`;
+        return;
+    }
+    
+    if (!draggedElement) return;
+    moveDraggedElement(e.clientX, e.clientY);
 }
 
 function handleTouchMove(e) {
-    if (!draggedNote) return;
+    if (!draggedElement) return;
     e.preventDefault();
     const touch = e.touches[0];
-    moveDraggedNote(touch.clientX, touch.clientY);
+    moveDraggedElement(touch.clientX, touch.clientY);
 }
 
-function moveDraggedNote(clientX, clientY) {
+function moveDraggedElement(clientX, clientY) {
     const canvasRect = canvas.getBoundingClientRect();
+    const elWidth = draggedElement.offsetWidth;
+    const elHeight = draggedElement.offsetHeight;
+    
     let x = clientX - canvasRect.left - dragOffset.x;
     let y = clientY - canvasRect.top - dragOffset.y;
     
-    // Keep note within canvas
-    x = Math.max(0, Math.min(x, canvasRect.width - 200));
-    y = Math.max(0, Math.min(y, canvasRect.height - 150));
+    x = Math.max(0, Math.min(x, canvasRect.width - elWidth));
+    y = Math.max(0, Math.min(y, canvasRect.height - elHeight));
     
-    draggedNote.style.left = `${x}px`;
-    draggedNote.style.top = `${y}px`;
+    draggedElement.style.left = `${x}px`;
+    draggedElement.style.top = `${y}px`;
 }
 
 function handleMouseUp() {
@@ -382,21 +554,30 @@ function handleTouchEnd() {
 }
 
 function endDrag() {
-    if (!draggedNote) return;
+    if (!draggedElement) return;
     
-    draggedNote.classList.remove('dragging');
+    draggedElement.classList.remove('dragging');
     
-    const noteId = draggedNote.dataset.id;
-    const x = parseInt(draggedNote.style.left);
-    const y = parseInt(draggedNote.style.top);
+    const id = draggedElement.dataset.id;
+    const x = parseInt(draggedElement.style.left);
+    const y = parseInt(draggedElement.style.top);
     
-    updateNotePosition(noteId, x, y);
-    draggedNote = null;
+    if (isResizing) {
+        const width = parseInt(draggedElement.style.width);
+        const height = parseInt(draggedElement.style.height);
+        updateZoneSize(id, width, height);
+        isResizing = false;
+    } else if (draggedElement.classList.contains('note')) {
+        updateNotePosition(id, x, y);
+    } else if (draggedElement.classList.contains('zone')) {
+        updateZonePosition(id, x, y);
+    }
+    
+    draggedElement = null;
 }
 
 // Realtime Updates
 function subscribeToUpdates() {
-    // Subscribe to notes collection
     pb.collection('notes').subscribe('*', (e) => {
         if (e.record.board_id !== currentBoard.id) return;
         
@@ -411,33 +592,63 @@ function subscribeToUpdates() {
                 const noteIdx = notes.findIndex(n => n.id === e.record.id);
                 if (noteIdx !== -1) {
                     notes[noteIdx] = e.record;
-                    const noteEl = document.querySelector(`[data-id="${e.record.id}"]`);
-                    if (noteEl && noteEl !== draggedNote) {
-                        // Update position if not being dragged
+                    const noteEl = document.querySelector(`.note[data-id="${e.record.id}"]`);
+                    if (noteEl && noteEl !== draggedElement) {
                         noteEl.style.left = `${e.record.x}px`;
                         noteEl.style.top = `${e.record.y}px`;
                         
-                        // Update text
                         const content = noteEl.querySelector('.note-content');
                         if (content && document.activeElement !== content) {
                             content.textContent = e.record.text;
                         }
                         
-                        // Update color
                         COLORS.forEach(c => noteEl.classList.remove(`note-${c}`));
                         noteEl.classList.add(`note-${e.record.color}`);
+                        noteEl.querySelectorAll('.color-dot').forEach(dot => {
+                            dot.classList.toggle('active', dot.dataset.color === e.record.color);
+                        });
                     }
                 }
                 break;
             case 'delete':
                 notes = notes.filter(n => n.id !== e.record.id);
-                const delEl = document.querySelector(`[data-id="${e.record.id}"]`);
+                const delEl = document.querySelector(`.note[data-id="${e.record.id}"]`);
                 if (delEl) delEl.remove();
                 break;
         }
     });
     
-    // Subscribe to board updates (user count)
+    pb.collection('zones').subscribe('*', (e) => {
+        if (e.record.board_id !== currentBoard.id) return;
+        
+        switch (e.action) {
+            case 'create':
+                if (!zones.find(z => z.id === e.record.id)) {
+                    zones.push(e.record);
+                    renderZone(e.record);
+                }
+                break;
+            case 'update':
+                const zoneIdx = zones.findIndex(z => z.id === e.record.id);
+                if (zoneIdx !== -1) {
+                    zones[zoneIdx] = e.record;
+                    const zoneEl = document.querySelector(`.zone[data-id="${e.record.id}"]`);
+                    if (zoneEl && zoneEl !== draggedElement) {
+                        zoneEl.style.left = `${e.record.x}px`;
+                        zoneEl.style.top = `${e.record.y}px`;
+                        zoneEl.style.width = `${e.record.width}px`;
+                        zoneEl.style.height = `${e.record.height}px`;
+                    }
+                }
+                break;
+            case 'delete':
+                zones = zones.filter(z => z.id !== e.record.id);
+                const delEl = document.querySelector(`.zone[data-id="${e.record.id}"]`);
+                if (delEl) delEl.remove();
+                break;
+        }
+    });
+    
     pb.collection('boards').subscribe(currentBoard.id, (e) => {
         if (e.action === 'update') {
             updateUserCount(e.record.user_count);
@@ -446,7 +657,7 @@ function subscribeToUpdates() {
 }
 
 function updateUserCount(count) {
-    document.getElementById('userCount').textContent = `👥 ${count}`;
+    document.getElementById('userCount').textContent = `👥 ${count || 1}`;
 }
 
 // Share
@@ -484,8 +695,7 @@ function showToast(message) {
 // Handle page unload
 window.addEventListener('beforeunload', () => {
     if (currentBoard) {
-        // Best effort to decrement user count
-        navigator.sendBeacon(`${API_URL}/api/collections/boards/records/${currentBoard.id}`, 
-            JSON.stringify({ user_count: Math.max(0, currentBoard.user_count - 1) }));
+        navigator.sendBeacon(`${window.location.origin}/api/collections/boards/records/${currentBoard.id}`, 
+            JSON.stringify({ user_count: Math.max(0, (currentBoard.user_count || 1) - 1) }));
     }
 });
